@@ -42,6 +42,13 @@ function stableWindowId(provider, window) {
   return `sha256:${crypto.createHash('sha256').update(identity).digest('hex')}`;
 }
 
+function antigravityPool(label, kind) {
+  const exact = `${String(label || '').trim()}\0${kind || ''}`;
+  if (exact === 'Gemini 5-hour\0session' || exact === 'Gemini weekly\0weekly') return 'Gemini Models';
+  if (exact === 'Claude/GPT 5-hour\0session' || exact === 'Claude/GPT weekly\0weekly') return 'Claude and GPT models';
+  return null;
+}
+
 function createQuotaSnapshot(limits, { now = () => new Date(), appVersion = null } = {}) {
   const generatedAt = iso(now() instanceof Date ? now().toISOString() : now());
   if (!generatedAt) throw new TypeError('generated_at must be an ISO timestamp');
@@ -67,10 +74,7 @@ function createQuotaSnapshot(limits, { now = () => new Date(), appVersion = null
     const rawWindows = Array.isArray(row.windows) ? row.windows : [];
     const windows = rawWindows.map((window) => ({
       id: stableWindowId(provider, window),
-      pool: provider === 'antigravity'
-        ? (window.label === 'Gemini Models' || window.label === 'Claude and GPT models'
-          ? window.label
-          : null)
+      pool: provider === 'antigravity' ? antigravityPool(window.label, window.kind) : null,
         : null,
       window_minutes: Number.isFinite(window.windowMinutes) ? window.windowMinutes : null,
       remaining_percent: Number.isFinite(window.remainingPercent)
@@ -78,8 +82,7 @@ function createQuotaSnapshot(limits, { now = () => new Date(), appVersion = null
         : null,
       resets_at: iso(window.resetsAt)
     }));
-    const unknownAntigravityPool = provider === 'antigravity'
-      && windows.some((window, index) => !["Gemini Models", "Claude and GPT models"].includes(rawWindows[index]?.label));
+    const unknownAntigravityPool = provider === 'antigravity' && windows.some((window) => !window.pool);
     return {
       provider,
       account_key: accountKey,

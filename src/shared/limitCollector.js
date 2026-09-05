@@ -4463,6 +4463,7 @@ module.exports = {
   fetchZedLimits: zedLimits.fetchZedLimits,
   mapClaudeCliUsageToProvider,
   mapClaudeUsageToProvider,
+  mapAntigravitySnapshot,
   mapCodexRateLimitsToProvider,
   parseClaudeCliUsageText,
   parseBoolean,

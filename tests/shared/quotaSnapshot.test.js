@@ -8,7 +8,8 @@ const path = require('node:path');
 const test = require('node:test');
 const { createQuotaSnapshot, serializeQuotaSnapshot } = require('../../src/shared/quotaSnapshot');
 const { writeQuotaSnapshotAtomic } = require('../../src/shared/quotaSnapshotWriter');
-const { mapClaudeUsageToProvider } = require('../../src/shared/limitCollector');
+const { mapAntigravitySnapshot, mapClaudeUsageToProvider } = require('../../src/shared/limitCollector');
+const { _quotaSummaryWindows } = require('../../src/shared/antigravityProbe');
 
 const accountKey = `sha256:${'a'.repeat(64)}`;
 
@@ -47,13 +48,13 @@ test('unknown source and stale row time become unavailable without invented valu
 });
 
 test('uses normalized Antigravity labels and real Claude mapper durations', () => {
-  const antigravity = {
-    provider: 'antigravity', accountKey, accountEmail: 'known@example.invalid', status: 'ok', source: 'rpc',
-    updatedAt: '2026-01-01T00:00:00Z', windows: [
-      { kind: 'weekly', label: 'Gemini Models', remainingPercent: 80, windowMinutes: 10080 },
-      { kind: 'weekly', label: 'Claude and GPT models', remainingPercent: 60, windowMinutes: 10080 }
-    ]
-  };
+  const antigravityWindows = _quotaSummaryWindows({ groups: [
+    { displayName: 'Gemini Pro', buckets: [{ window: '5h', remainingFraction: 0.8, resetTime: '2026-01-02T00:00:00Z' }] },
+    { displayName: 'Claude', buckets: [{ window: 'weekly', remainingFraction: 0.6, resetTime: '2026-01-03T00:00:00Z' }] }
+  ] });
+  const antigravity = mapAntigravitySnapshot({ accountEmail: 'known@example.invalid', windows: antigravityWindows }, {
+    nowMs: Date.parse('2026-01-01T00:00:00Z'), source: 'rpc'
+  });
   const claude = mapClaudeUsageToProvider({
     five_hour: { utilization: 0 }, seven_day: { utilization: 0 },
     limits: [{ kind: 'weekly_scoped', scope: { model: { display_name: 'fable' } }, utilization: 0 }]
