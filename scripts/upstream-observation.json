@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/Javis603/token-monitor.git",
+  "upstream_ref": "main",
+  "upstream_base_commit": "169b3906b8a815a55a2990dbfe4d58f21d6b2a0b",
+  "observation_patch_commit": "a3b9a1dad096d0224d2e3bf4473f62f790e59808",
+  "observation_contract_schema": 1,
+  "observation_files": [
+    "src/shared/quotaSnapshot.js",
+    "src/shared/quotaSnapshotWriter.js"
+  ]
+}
