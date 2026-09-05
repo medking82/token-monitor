@@ -75,7 +75,6 @@ function createQuotaSnapshot(limits, { now = () => new Date(), appVersion = null
     const windows = rawWindows.map((window) => ({
       id: stableWindowId(provider, window),
       pool: provider === 'antigravity' ? antigravityPool(window.label, window.kind) : null,
-        : null,
       window_minutes: Number.isFinite(window.windowMinutes) ? window.windowMinutes : null,
       remaining_percent: Number.isFinite(window.remainingPercent)
         ? window.remainingPercent
