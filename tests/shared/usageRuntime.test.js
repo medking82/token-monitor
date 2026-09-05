@@ -277,6 +277,8 @@ test('a coalesced manual refresh stays a full scan', async () => {
 
   const runtime = startCollector({
     clients: 'codex',
+    // Count host scans independently of the developer's running WSL distros.
+    wslScanEnabled: false,
     allTimeSince: '2024-01-01',
     commandTimeoutMs: 1000,
     deviceId: 'usage-runtime',

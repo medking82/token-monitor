@@ -2,7 +2,7 @@
   "schema_version": 1,
   "upstream_repository": "https://github.com/Javis603/token-monitor.git",
   "upstream_ref": "main",
-  "upstream_base_commit": "169b3906b8a815a55a2990dbfe4d58f21d6b2a0b",
+  "upstream_base_commit": "08e4e7a76959d2a54dc0bdc66f36bfe67047526b",
   "observation_patch_commit": "d166caf6c26568d11439f81840b79014e881f079",
   "observation_contract_schema": 1,
   "observation_files": [

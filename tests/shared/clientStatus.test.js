@@ -83,8 +83,13 @@ test('clientDataDirPresence detects Antigravity via the CLI conversations dir', 
   const cliDir = path.join(base, '.gemini', 'antigravity-cli', 'conversations');
   const originalHome = os.homedir;
   const prevGeminiHome = process.env.GEMINI_CLI_HOME;
+  const prevTokscaleConfigDir = process.env.TOKSCALE_CONFIG_DIR;
   try {
     delete process.env.GEMINI_CLI_HOME;
+    // Keep the test independent from a real user's Antigravity sync cache.
+    // clientDataDirPresence includes that cache as a valid source, so a host
+    // installation would otherwise make the initial CLI-only assertion true.
+    process.env.TOKSCALE_CONFIG_DIR = path.join(base, '.config', 'tokscale');
     os.homedir = () => base;
     assert.equal(clientDataDirPresence('antigravity').antigravity, false);
     fs.mkdirSync(cliDir, { recursive: true });
@@ -95,6 +100,8 @@ test('clientDataDirPresence detects Antigravity via the CLI conversations dir', 
     os.homedir = originalHome;
     if (prevGeminiHome === undefined) delete process.env.GEMINI_CLI_HOME;
     else process.env.GEMINI_CLI_HOME = prevGeminiHome;
+    if (prevTokscaleConfigDir === undefined) delete process.env.TOKSCALE_CONFIG_DIR;
+    else process.env.TOKSCALE_CONFIG_DIR = prevTokscaleConfigDir;
     fs.rmSync(base, { recursive: true, force: true });
   }
 });

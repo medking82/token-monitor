@@ -21,8 +21,10 @@ const {
 
 const { emptyPeriod } = require('../../src/shared/usage');
 const { installInProcessWatchHost } = require('../helpers/watchHost');
+const { installWslUsageGuard } = require('../helpers/wslUsage');
 
 installInProcessWatchHost(test);
+installWslUsageGuard(test);
 
 const baseOptions = {
   clients: 'claude',

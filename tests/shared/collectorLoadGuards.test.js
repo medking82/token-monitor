@@ -20,11 +20,13 @@ const {
 
 const { installSourceEnvGuard } = require('../helpers/sourceEnv');
 const { installInProcessWatchHost } = require('../helpers/watchHost');
+const { installWslUsageGuard } = require('../helpers/wslUsage');
 
 const collectorPath = require.resolve('../../src/shared/collector');
 
 installSourceEnvGuard(test);
 installInProcessWatchHost(test);
+installWslUsageGuard(test);
 
 function freshCollector() {
   delete require.cache[collectorPath];
@@ -1948,7 +1950,10 @@ test('clientDataDirPresence requires an actual VS Code Copilot chat source', () 
     path.join('Library', 'Application Support', 'Code', 'User', 'workspaceStorage', 'plain-workspace')
   ]);
   const originalHomedir = os.homedir;
+  const originalAppData = process.env.APPDATA;
   os.homedir = () => tmp;
+  // Windows also probes APPDATA; an installed VS Code must not seed the fixture.
+  process.env.APPDATA = path.join(tmp, 'AppData', 'Roaming');
   try {
     const { clientDataDirPresence } = freshCollector();
     assert.deepEqual(clientDataDirPresence('copilot'), { copilot: false });
@@ -1956,6 +1961,8 @@ test('clientDataDirPresence requires an actual VS Code Copilot chat source', () 
     assert.deepEqual(clientDataDirPresence('copilot'), { copilot: true });
   } finally {
     os.homedir = originalHomedir;
+    if (originalAppData === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = originalAppData;
     delete require.cache[collectorPath];
     fs.rmSync(tmp, { recursive: true, force: true });
   }

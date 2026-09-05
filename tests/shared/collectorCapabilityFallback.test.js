@@ -11,6 +11,9 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { EventEmitter } = require('node:events');
 const { referencedTerminationOptions } = require('../helpers/referencedTerminationTimers');
+const { installWslUsageGuard } = require('../helpers/wslUsage');
+
+installWslUsageGuard(test);
 
 const collectorPath = require.resolve('../../src/shared/collector');
 

@@ -136,37 +136,49 @@ test('missing packaged Widget artifacts do not launch or create marker state', a
   }
 });
 
-test('symlinked packaged Widget artifacts never launch or create marker state', async () => {
+test('symlinked packaged Widget artifacts never launch or create marker state', async (t) => {
   for (const artifact of ['host', 'appex', 'helper']) {
-    const setup = fixture();
-    try {
-      const target = artifact === 'host'
-        ? setup.appPath
-        : artifact === 'appex'
-          ? setup.appexPath
-          : path.join(setup.resourcesPath, 'TokenMonitorWidgetReloader');
-      const realTarget = `${target}.real`;
-      fs.renameSync(target, realTarget);
-      const linkType = artifact === 'helper'
-        ? 'file'
-        : process.platform === 'win32'
-          ? 'junction'
-          : 'dir';
-      fs.symlinkSync(realTarget, target, linkType);
-      let launches = 0;
-      const recover = createMacWidgetLaunchServicesRecovery({
-        execFile: () => { launches += 1; }
-      });
+    await t.test(artifact, async (subtest) => {
+      const setup = fixture();
+      try {
+        const target = artifact === 'host'
+          ? setup.appPath
+          : artifact === 'appex'
+            ? setup.appexPath
+            : path.join(setup.resourcesPath, 'TokenMonitorWidgetReloader');
+        const realTarget = `${target}.real`;
+        fs.renameSync(target, realTarget);
+        const linkType = artifact === 'helper'
+          ? 'file'
+          : process.platform === 'win32'
+            ? 'junction'
+            : 'dir';
+        try {
+          fs.symlinkSync(realTarget, target, linkType);
+        } catch (error) {
+          // Windows file symlinks require SeCreateSymbolicLinkPrivilege (or
+          // Developer Mode). Directory junctions above remain testable here.
+          if (process.platform === 'win32' && artifact === 'helper' && error?.code === 'EPERM') {
+            subtest.skip('Windows file-symlink privilege is unavailable');
+            return;
+          }
+          throw error;
+        }
+        let launches = 0;
+        const recover = createMacWidgetLaunchServicesRecovery({
+          execFile: () => { launches += 1; }
+        });
 
-      assert.deepEqual(await run(recover, setup), {
-        status: 'skipped',
-        reason: 'artifacts-missing'
-      });
-      assert.equal(launches, 0);
-      assert.equal(fs.existsSync(setup.userDataPath), false);
-    } finally {
-      setup.cleanup();
-    }
+        assert.deepEqual(await run(recover, setup), {
+          status: 'skipped',
+          reason: 'artifacts-missing'
+        });
+        assert.equal(launches, 0);
+        assert.equal(fs.existsSync(setup.userDataPath), false);
+      } finally {
+        setup.cleanup();
+      }
+    });
   }
 });
 

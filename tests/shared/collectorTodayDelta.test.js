@@ -11,8 +11,10 @@ const path = require('node:path');
 const test = require('node:test');
 const { EventEmitter } = require('node:events');
 const { installInProcessWatchHost } = require('../helpers/watchHost');
+const { installWslUsageGuard } = require('../helpers/wslUsage');
 
 installInProcessWatchHost(test);
+installWslUsageGuard(test);
 
 const collectorPath = require.resolve('../../src/shared/collector');
 
@@ -47,16 +49,12 @@ function recordingSpawn(calls, tokens = 50, sessionMeta = {}) {
   };
 }
 
-function waitForUpdates(updates, count) {
-  if (updates.length >= count) return Promise.resolve();
-  return new Promise((resolve) => {
-    const interval = setInterval(() => {
-      if (updates.length >= count) {
-        clearInterval(interval);
-        resolve();
-      }
-    }, 5);
-  });
+async function waitForUpdates(updates, count) {
+  const startedAt = Date.now();
+  while (updates.length < count) {
+    if (Date.now() - startedAt >= 2000) throw new Error('Timed out waiting for collector updates');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 const baseOptions = {
@@ -441,10 +439,11 @@ test('startCollector: watch ticks reuse the full-scan anchor, manual ticks resca
   const tmpShared = fs.mkdtempSync(path.join(os.tmpdir(), 'tm-shared-'));
   const originalSharedDir = process.env.TOKEN_MONITOR_SHARED_DIR;
   process.env.TOKEN_MONITOR_SHARED_DIR = tmpShared;
+  let handle;
   try {
     const { startCollector } = freshCollector();
     const updates = [];
-    const handle = startCollector({
+    handle = startCollector({
       ...baseOptions,
       intervalMs: 60 * 60 * 1000,
       watchEnabled: false,
@@ -469,8 +468,8 @@ test('startCollector: watch ticks reuse the full-scan anchor, manual ticks resca
     await waitForUpdates(updates, 3);
     assert.equal(calls.length, fullScans + 1 + 3);
 
-    handle.stop();
   } finally {
+    if (handle) handle.stop();
     childProcess.spawn = originalSpawn;
     if (originalSharedDir === undefined) delete process.env.TOKEN_MONITOR_SHARED_DIR;
     else process.env.TOKEN_MONITOR_SHARED_DIR = originalSharedDir;
