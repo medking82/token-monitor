@@ -9,11 +9,13 @@ user's primary checkout. SOP remains responsible for deciding review, promotion,
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 
@@ -21,6 +23,8 @@ UPSTREAM_REPOSITORY = "https://github.com/Javis603/token-monitor.git"
 UPSTREAM_REF = "main"
 MANIFEST_RELATIVE = Path("scripts/upstream-observation.json")
 SHA = re.compile(r"^[0-9a-f]{40}$")
+_INERT_HOOKS = Path(tempfile.mkdtemp(prefix="token-monitor-sync-hooks-"))
+atexit.register(lambda: _INERT_HOOKS.rmdir())
 
 
 class SyncError(RuntimeError):
@@ -31,7 +35,7 @@ class SyncError(RuntimeError):
 
 
 def run(repo: Path, argv: list[str], *, timeout: int = 60) -> tuple[int, str, str]:
-    command = ["git", "-c", "core.hooksPath=", "-c", "core.fsmonitor=false",
+    command = ["git", "-c", f"core.hooksPath={_INERT_HOOKS}", "-c", "core.fsmonitor=false",
                "-c", "submodule.recurse=false", *argv]
     try:
         result = subprocess.run(
@@ -66,11 +70,11 @@ def linked_worktree_context(repo: Path) -> tuple[Path, str, str]:
                if line.startswith("worktree ")]
     current = str(repo.resolve()).casefold()
     matched = [Path(path).resolve() for path in entries if str(Path(path).resolve()).casefold() == current]
-    if len(matched) != 1 or len(entries) < 2 or (repo / ".git").is_file() is False:
-        raise SyncError("isolated_linked_worktree_required")
-    primary = Path(entries[0]).resolve()
+    primary = Path(entries[0]).resolve() if entries else repo.resolve()
     if primary == repo.resolve():
         raise SyncError("primary_worktree_refused")
+    if len(matched) != 1 or len(entries) < 2 or (repo / ".git").is_file() is False:
+        raise SyncError("isolated_linked_worktree_required")
     return primary, git(primary, ["rev-parse", "HEAD"]), git(primary, ["status", "--porcelain=v1", "--untracked-files=all"])
 
 
@@ -81,6 +85,7 @@ def regular_owned_file(path: Path) -> None:
 
 def load_manifest(repo: Path) -> dict[str, Any]:
     path = repo / MANIFEST_RELATIVE
+    regular_owned_file(path)
     try:
         def pairs(items):
             result = {}
@@ -98,18 +103,20 @@ def load_manifest(repo: Path) -> dict[str, Any]:
         "schema_version", "upstream_repository", "upstream_ref", "upstream_base_commit",
         "observation_patch_commit", "observation_contract_schema", "observation_files",
     }
-    if not isinstance(value, dict) or set(value) != required or value["schema_version"] != 1:
+    if (not isinstance(value, dict) or set(value) != required
+            or type(value["schema_version"]) is not int or value["schema_version"] != 1):
         raise SyncError("manifest schema is unsupported")
     if value["upstream_repository"] != UPSTREAM_REPOSITORY or value["upstream_ref"] != UPSTREAM_REF:
         raise SyncError("manifest upstream identity is not the fixed Token Monitor upstream")
     for key in ("upstream_base_commit", "observation_patch_commit"):
         if not isinstance(value[key], str) or SHA.fullmatch(value[key]) is None:
             raise SyncError(f"manifest {key} is not an exact commit SHA")
-    if value["observation_contract_schema"] != 1 or not isinstance(value["observation_files"], list):
+    if (type(value["observation_contract_schema"]) is not int
+            or value["observation_contract_schema"] != 1
+            or not isinstance(value["observation_files"], list)):
         raise SyncError("manifest observation contract is invalid")
     if value["observation_files"] != ["src/shared/quotaSnapshot.js", "src/shared/quotaSnapshotWriter.js"]:
         raise SyncError("manifest observation file allowlist changed")
-    regular_owned_file(repo / MANIFEST_RELATIVE)
     for relative in value["observation_files"]:
         if not isinstance(relative, str) or relative.startswith("/") or ".." in Path(relative).parts:
             raise SyncError("observation_file_path_invalid")
@@ -163,6 +170,8 @@ def compact(status: str, *, head: str, upstream: str, base: str, changed: list[s
     }
     if changed is not None:
         value["changed_paths"] = changed[:128]
+        value["changed_paths_total"] = len(changed)
+        value["changed_paths_truncated"] = len(changed) > 128
     if reason:
         value["reason"] = reason
     return value
@@ -176,9 +185,6 @@ def prepare(repo: Path, manifest: dict[str, Any], url: str, fetched: str,
     if fetched == base:
         return compact("current", head=head, upstream=fetched, base=base, changed=[])
 
-    if run(repo, ["merge-base", "--is-ancestor", base, fetched])[0] != 0:
-        raise SyncError("upstream_rewind_or_divergence")
-
     # Fetch into FETCH_HEAD and merge only the exact SHA observed above. No upstream executable is
     # invoked. --no-commit leaves the candidate reviewable and keeps this helper out of release.
     code, _, _ = run(repo, ["fetch", "--no-tags", url, f"refs/heads/{UPSTREAM_REF}"], timeout=120)
@@ -186,8 +192,12 @@ def prepare(repo: Path, manifest: dict[str, Any], url: str, fetched: str,
         raise SyncError("upstream_fetch_failed")
     fetched_again = git(repo, ["rev-parse", "FETCH_HEAD"])
     if fetched_again != fetched:
-        raise SyncError("upstream ref changed during fetch; rerun check and prepare")
-    code, stdout, stderr = run(repo, ["merge", "--no-commit", "--no-ff", fetched])
+        raise SyncError("upstream_ref_changed_during_fetch")
+    if run(repo, ["merge-base", "--is-ancestor", base, fetched])[0] != 0:
+        raise SyncError("upstream_rewind_or_divergence")
+    if run(repo, ["cat-file", "-e", f"{fetched}:{MANIFEST_RELATIVE.as_posix()}"])[0] == 0:
+        raise SyncError("upstream_owned_manifest_collision")
+    code, _, _ = run(repo, ["merge", "--no-commit", "--no-ff", fetched])
     if code:
         changed = [line for line in git(repo, ["diff", "HEAD", "--name-only"]).splitlines() if line]
         raise SyncError("upstream_merge_conflict", {
@@ -199,6 +209,7 @@ def prepare(repo: Path, manifest: dict[str, Any], url: str, fetched: str,
     # uncommitted for review; the observation patch and provider login code are untouched.
     manifest["upstream_base_commit"] = fetched
     path = repo / MANIFEST_RELATIVE
+    regular_owned_file(path)
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     changed = [line for line in git(repo, ["diff", "HEAD", "--name-only"]).splitlines() if line]
     if not (repo / MANIFEST_RELATIVE).is_file() or (repo / MANIFEST_RELATIVE).is_symlink():

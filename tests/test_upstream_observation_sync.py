@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -41,6 +40,10 @@ class UpstreamObservationSyncTest(unittest.TestCase):
                        capture_output=True, text=True)
         self.base = git(seed, "rev-parse", "HEAD")
         self.remote = self.remote_path.as_uri()
+        self.upstream = Path(self.temp.name) / "independent-upstream"
+        subprocess.run(["git", "clone", "--branch", "main", str(self.remote_path), str(self.upstream)],
+                       check=True, capture_output=True, text=True)
+        self.git_config(self.upstream)
 
     @staticmethod
     def git_config(path):
@@ -93,10 +96,10 @@ class UpstreamObservationSyncTest(unittest.TestCase):
         hook_dir = Path(git(candidate, "rev-parse", "--git-path", "hooks"))
         marker = Path(self.temp.name) / "hook-ran"
         hook_dir.mkdir(parents=True, exist_ok=True)
-        (hook_dir / "pre-merge-commit").write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
-        (self.seed / "README.md").write_text("upstream update\n", encoding="utf-8")
-        self.commit(self.seed, "upstream update")
-        subprocess.run(["git", "push", "origin", "main"], cwd=self.seed, check=True,
+        (hook_dir / "post-merge").write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+        (self.upstream / "README.md").write_text("upstream update\n", encoding="utf-8")
+        self.commit(self.upstream, "upstream update")
+        subprocess.run(["git", "push", "origin", "main"], cwd=self.upstream, check=True,
                        capture_output=True, text=True)
         result = run_sync(candidate, "prepare", self.remote)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -106,7 +109,7 @@ class UpstreamObservationSyncTest(unittest.TestCase):
         self.assertFalse(marker.exists(), "Git hook executed during prepare")
         self.assertEqual((candidate / "src/shared/quotaSnapshot.js").read_text(), "observation patch\n")
         manifest = json.loads((candidate / "scripts/upstream-observation.json").read_text())
-        self.assertEqual(manifest["upstream_base_commit"], git(self.seed, "rev-parse", "HEAD"))
+        self.assertEqual(manifest["upstream_base_commit"], evidence["fetched_sha"])
 
     def test_dirty_prepare_is_blocked(self):
         candidate = self.candidate()
@@ -142,15 +145,41 @@ class UpstreamObservationSyncTest(unittest.TestCase):
         candidate = self.candidate()
         (candidate / "README.md").write_text("candidate edit\n", encoding="utf-8")
         self.commit(candidate, "candidate edit")
-        (self.seed / "README.md").write_text("upstream conflicting edit\n", encoding="utf-8")
-        self.commit(self.seed, "upstream conflicting edit")
-        subprocess.run(["git", "push", "origin", "main"], cwd=self.seed, check=True,
+        (self.upstream / "README.md").write_text("upstream conflicting edit\n", encoding="utf-8")
+        self.commit(self.upstream, "upstream conflicting edit")
+        subprocess.run(["git", "push", "origin", "main"], cwd=self.upstream, check=True,
                        capture_output=True, text=True)
         result = run_sync(candidate, "prepare", self.remote)
         self.assertEqual(result.returncode, 2)
         evidence = json.loads(result.stdout)
         self.assertEqual(evidence["reason"], "upstream_merge_conflict")
         self.assertIn("README.md", evidence["changed_paths"])
+
+    def test_primary_worktree_is_refused(self):
+        candidate = self.candidate()
+        for relative in ("src/shared/quotaSnapshot.js", "src/shared/quotaSnapshotWriter.js", "scripts/upstream-observation.json"):
+            source = candidate / relative
+            target = self.seed / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+        self.commit(self.seed, "test primary manifest")
+        result = run_sync(self.seed, "check", self.remote)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["reason"], "primary_worktree_refused")
+
+    def test_force_rewind_is_blocked(self):
+        candidate = self.candidate()
+        (candidate / "candidate-marker.txt").write_text("candidate\n", encoding="utf-8")
+        self.commit(candidate, "candidate base extension")
+        extended = git(candidate, "rev-parse", "HEAD~0")
+        manifest_path = candidate / "scripts" / "upstream-observation.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["upstream_base_commit"] = extended
+        manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+        self.commit(candidate, "record extended upstream base")
+        result = run_sync(candidate, "prepare", self.remote)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["reason"], "upstream_rewind_or_divergence")
 
     def tearDown(self):
         self.temp.cleanup()
