@@ -202,7 +202,8 @@ def prepare(repo: Path, manifest: dict[str, Any], url: str, fetched: str,
         changed = [line for line in git(repo, ["diff", "HEAD", "--name-only"]).splitlines() if line]
         raise SyncError("upstream_merge_conflict", {
             "worktree_head": head, "fetched_sha": fetched, "upstream_base_commit": base,
-            "changed_paths": changed[:128],
+            "changed_paths": changed[:128], "changed_paths_total": len(changed),
+            "changed_paths_truncated": len(changed) > 128,
         })
 
     # Record the new upstream base only after the exact merge succeeds. The candidate remains
