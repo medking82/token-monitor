@@ -1,0 +1,17 @@
+{
+  "repository": "medking82/token-monitor",
+  "renderer": {
+    "repository": "star-history/star-history",
+    "commit": "bcddc9d532b10bac7e0187a741288bf9cab17616"
+  },
+  "stars": [
+    {
+      "starredAt": "2026-07-23T15:14:29.000Z",
+      "count": 1
+    },
+    {
+      "starredAt": "2026-09-05T00:00:00.000Z",
+      "count": 1
+    }
+  ]
+}
