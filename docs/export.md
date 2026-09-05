@@ -20,6 +20,11 @@ In **Settings → Collection → Data export**:
 
 Both actions write the **same** files.
 
+The app also maintains a local-only quota observation for automation consumers
+at `app.getPath('userData')/observations/token-monitor-quota.json`. It is written
+from the existing normalized limits runtime and is independent of the selectable
+usage export folder.
+
 ## The files
 
 | File | What it is |
@@ -100,6 +105,18 @@ The export contains **only your usage numbers**. It never includes device
 identifiers, hostnames, account emails, plan labels, or AI-tool limit/quota
 account data — even when multi-device sync is running. It is safe to drop into a
 synced vault.
+
+### Local quota observation
+
+The observation has `kind: "token-monitor-quota-snapshot"` and
+`schema_version: 1`. Its top-level `generated_at` is the write time; each
+provider's `observed_at` is the normalized row update time. Provider rows contain
+only `provider`, a pseudonymous 64-hex `account_key` (or `null`), `status`,
+`source`, and every normalized window. Windows contain `id`, `pool`,
+`window_minutes`, `remaining_percent`, and `resets_at`. Unknown or malformed
+source and time data is represented as unavailable; the writer never invents a
+zero quota. Duplicate provider identities fail closed, and writes use a
+temporary file followed by an atomic rename.
 
 ## Recipes
 

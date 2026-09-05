@@ -26,6 +26,7 @@ function harness(options = {}) {
     getDiagnostics: () => ({ enabled: true, providers: [] }),
     reconfigure: (...args) => { calls.push(['reconfigure', ...args]); return 'reconfigure'; },
     refresh: (...args) => { calls.push(['refresh', ...args]); return 'refresh'; },
+    subscribe: (listener) => { calls.push(['subscribe', listener]); return () => calls.push(['unsubscribe']); },
     stop: () => calls.push(['limitsStop'])
   };
   const records = [];
@@ -60,6 +61,18 @@ test('usage publishes immediately without waiting for limits and late limits emi
   assert.equal(records.length, 2);
   assert.equal(records[1].record.today.totalTokens, 10);
   assert.equal(records[1].record.limits.updatedAt, 'limits-time');
+});
+
+test('exposes the existing limits subscription and removes it after stop', () => {
+  const { runtime, calls } = harness();
+  const listener = () => {};
+  const unsubscribe = runtime.subscribeLimits(listener);
+  assert.equal(typeof unsubscribe, 'function');
+  assert.equal(calls[0][0], 'subscribe');
+  unsubscribe();
+  assert.equal(calls[1][0], 'unsubscribe');
+  runtime.stop();
+  assert.equal(runtime.subscribeLimits(listener)(), false);
 });
 
 test('limits arriving before first usage are buffered without fabricating a zero record', () => {

@@ -82,6 +82,8 @@ const { deviceRecordFromAnchor } = require('../shared/anchorSeed');
 const { sendWhenRendererReady } = require('./deferredWindowSend');
 const { applyInitialLimitProviderSeed } = require('./initialLimitProviderSeed');
 const { createDeviceRuntime } = require('../shared/deviceRuntime');
+const { createQuotaSnapshot } = require('../shared/quotaSnapshot');
+const { writeQuotaSnapshotAtomic } = require('../shared/quotaSnapshotWriter');
 const { createDiagnosticJournal } = require('../shared/diagnosticJournal');
 const { createDiagnosticReportGenerator } = require('./diagnostics');
 const { createDiagnosticSnapshotBuilder, diagnosticStreamDetailCode, selectLocalDeviceRecord } = require('./diagnosticSnapshot');
@@ -2809,6 +2811,43 @@ function withHistoryPreview(stats, devices) {
 
 let mode = 'idle';
 let deviceRuntimeHandle = null;
+let quotaSnapshotUnsubscribe = null;
+let quotaSnapshotWriteChain = Promise.resolve();
+
+function detachQuotaSnapshot() {
+  try { quotaSnapshotUnsubscribe?.(); } catch (_) {}
+  quotaSnapshotUnsubscribe = null;
+}
+
+function attachQuotaSnapshot(runtime) {
+  detachQuotaSnapshot();
+  if (!runtime?.subscribeLimits) return;
+  quotaSnapshotUnsubscribe = runtime.subscribeLimits((limits) => {
+    const target = path.join(app.getPath('userData'), 'observations', 'token-monitor-quota.json');
+    const enqueue = (snapshot) => {
+      quotaSnapshotWriteChain = quotaSnapshotWriteChain
+        .catch(() => {})
+        .then(() => writeQuotaSnapshotAtomic(target, snapshot));
+      quotaSnapshotWriteChain.catch((error) => {
+        console.log(`[quota-snapshot] write failed: ${error.message}`);
+      });
+    };
+    try {
+      const snapshot = createQuotaSnapshot(limits, { appVersion: appVersion() });
+      enqueue(snapshot);
+    } catch (error) {
+      console.log(`[quota-snapshot] snapshot rejected: ${error.message}`);
+      // A rejected update must not leave an older usable artifact looking
+      // current. An empty envelope is deliberately conservative: consumers
+      // treat it as unavailable until the next complete normalized publish.
+      try {
+        enqueue(createQuotaSnapshot({ providers: [] }, { appVersion: appVersion() }));
+      } catch (fallbackError) {
+        console.log(`[quota-snapshot] unavailable envelope rejected: ${fallbackError.message}`);
+      }
+    }
+  });
+}
 const USAGE_RECONFIGURE_SETTLE_MS = 750;
 const USAGE_RECONFIGURE_RETRY_DELAYS_MS = Object.freeze([1000, 3000, 10_000]);
 const usageRuntimeReconciler = createLatestWinsReconciler({
@@ -3730,6 +3769,7 @@ async function saveSubscriptions(list, base) {
 function stopSyncCollector(options = {}) {
   usageRuntimeReconciler.cancel();
   usageRuntimeReconciler.setActiveKey(null);
+  detachQuotaSnapshot();
   if (deviceRuntimeHandle) { try { deviceRuntimeHandle.stop(options); } catch (_) {} }
   deviceRuntimeHandle = null;
 }
@@ -3775,6 +3815,7 @@ function startSyncCollector() {
   }, {
     limitsDeps: electronLimitsDeps()
   });
+  attachQuotaSnapshot(deviceRuntimeHandle);
   usageRuntimeReconciler.setActiveKey(usageConfigFingerprint(usageOptions));
   drainPendingRuntimeActions(deviceRuntimeHandle);
 }
@@ -3823,6 +3864,7 @@ function startHostCollector() {
   }, {
     limitsDeps: electronLimitsDeps()
   });
+  attachQuotaSnapshot(deviceRuntimeHandle);
   usageRuntimeReconciler.setActiveKey(usageConfigFingerprint(usageOptions));
   drainPendingRuntimeActions(deviceRuntimeHandle);
 }
@@ -4279,6 +4321,7 @@ function sendStatus(connected, extra) {
 function stopLocalCollector(options = {}) {
   usageRuntimeReconciler.cancel();
   usageRuntimeReconciler.setActiveKey(null);
+  detachQuotaSnapshot();
   if (deviceRuntimeHandle) { try { deviceRuntimeHandle.stop(options); } catch (_) {} }
   deviceRuntimeHandle = null;
   localDevice = null;
@@ -4365,6 +4408,7 @@ function startLocalCollector() {
   }, {
     limitsDeps: electronLimitsDeps()
   });
+  attachQuotaSnapshot(deviceRuntimeHandle);
   usageRuntimeReconciler.setActiveKey(usageConfigFingerprint(usageOptions));
   drainPendingRuntimeActions(deviceRuntimeHandle);
 }

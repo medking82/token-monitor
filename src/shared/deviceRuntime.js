@@ -188,6 +188,13 @@ function createDeviceRuntime(options = {}, deps = {}) {
       limits: limitsRuntime?.getDiagnostics?.() ?? null
     }),
     getSnapshot: () => deviceState.getSnapshot(),
+    // Narrow read-only access to the existing limits runtime. Consumers must
+    // observe published normalized rows; they must not create a second poller.
+    subscribeLimits: (listener) => active
+      ? (typeof limitsRuntime?.subscribe === 'function'
+        ? limitsRuntime.subscribe(listener)
+        : () => false)
+      : () => false,
     reconfigureUsage,
     reconfigureLimits: (next) => active ? limitsRuntime.reconfigure(next) : null,
     refreshClient: (clientId, refreshOptions) => active

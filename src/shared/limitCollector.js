@@ -723,6 +723,7 @@ function claudeFableWeeklyWindow(usage) {
     if (!/^fable$/i.test(displayName)) continue;
     return {
       kind: 'weekly',
+      windowMinutes: 10_080,
       label: displayName,
       usedPercent: claudeUsageWindowUsedPercent(entry),
       resetsAt: valueFromAliases(entry, ['resets_at', 'resetsAt'])
@@ -803,6 +804,7 @@ function mapClaudeUsageToProvider(usage, meta = {}) {
   if (session) {
     windows.push({
       kind: 'session',
+      windowMinutes: 300,
       usedPercent: claudeUsageWindowUsedPercent(session),
       resetsAt: valueFromAliases(session, ['resets_at', 'resetsAt'])
     });
@@ -810,6 +812,7 @@ function mapClaudeUsageToProvider(usage, meta = {}) {
   if (weekly) {
     windows.push({
       kind: 'weekly',
+      windowMinutes: 10_080,
       usedPercent: claudeUsageWindowUsedPercent(weekly),
       resetsAt: valueFromAliases(weekly, ['resets_at', 'resetsAt'])
     });
