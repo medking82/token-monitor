@@ -56,8 +56,8 @@ class UpstreamObservationSyncTest(unittest.TestCase):
 
     def candidate(self):
         candidate = Path(self.temp.name) / ("candidate-" + str(len(list(Path(self.temp.name).iterdir()))))
-        # Avoid relying on the candidate's configured remote: the helper uses the test URL only.
-        subprocess.run(["git", "clone", "--branch", "main", str(self.remote_path), str(candidate)],
+        # Use a real linked worktree so the keeper (seed) can be fingerprinted and protected.
+        subprocess.run(["git", "-C", str(self.seed), "worktree", "add", "--detach", str(candidate), self.base],
                        check=True, capture_output=True, text=True)
         self.git_config(candidate)
         (candidate / "src" / "shared").mkdir(parents=True)
@@ -69,7 +69,7 @@ class UpstreamObservationSyncTest(unittest.TestCase):
             "upstream_repository": "https://github.com/Javis603/token-monitor.git",
             "upstream_ref": "main",
             "upstream_base_commit": self.base,
-            "observation_patch_commit": "0" * 40,
+            "observation_patch_commit": self.base,
             "observation_contract_schema": 1,
             "observation_files": ["src/shared/quotaSnapshot.js", "src/shared/quotaSnapshotWriter.js"],
         }
@@ -90,6 +90,10 @@ class UpstreamObservationSyncTest(unittest.TestCase):
 
     def test_prepare_updates_base_and_preserves_observation(self):
         candidate = self.candidate()
+        hook_dir = Path(git(candidate, "rev-parse", "--git-path", "hooks"))
+        marker = Path(self.temp.name) / "hook-ran"
+        hook_dir.mkdir(parents=True, exist_ok=True)
+        (hook_dir / "pre-merge-commit").write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
         (self.seed / "README.md").write_text("upstream update\n", encoding="utf-8")
         self.commit(self.seed, "upstream update")
         subprocess.run(["git", "push", "origin", "main"], cwd=self.seed, check=True,
@@ -99,6 +103,7 @@ class UpstreamObservationSyncTest(unittest.TestCase):
         evidence = json.loads(result.stdout)
         self.assertEqual(evidence["status"], "prepared")
         self.assertIn("scripts/upstream-observation.json", evidence["changed_paths"])
+        self.assertFalse(marker.exists(), "Git hook executed during prepare")
         self.assertEqual((candidate / "src/shared/quotaSnapshot.js").read_text(), "observation patch\n")
         manifest = json.loads((candidate / "scripts/upstream-observation.json").read_text())
         self.assertEqual(manifest["upstream_base_commit"], git(self.seed, "rev-parse", "HEAD"))
@@ -116,6 +121,36 @@ class UpstreamObservationSyncTest(unittest.TestCase):
         result = run_sync(candidate, "check", (Path(self.temp.name) / "missing.git").as_uri())
         self.assertEqual(result.returncode, 2)
         self.assertEqual(json.loads(result.stdout)["status"], "blocked")
+
+    def test_prepare_failed_fetch_is_blocked(self):
+        candidate = self.candidate()
+        result = run_sync(candidate, "prepare", (Path(self.temp.name) / "missing.git").as_uri())
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["reason"], "upstream_fetch_failed")
+
+    def test_manifest_drift_is_blocked_before_fetch(self):
+        candidate = self.candidate()
+        manifest_path = candidate / "scripts" / "upstream-observation.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["upstream_base_commit"] = "0" * 40
+        manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+        result = run_sync(candidate, "check", self.remote)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)["reason"], "upstream_base_commit_missing")
+
+    def test_merge_conflict_is_left_in_worktree_with_paths(self):
+        candidate = self.candidate()
+        (candidate / "README.md").write_text("candidate edit\n", encoding="utf-8")
+        self.commit(candidate, "candidate edit")
+        (self.seed / "README.md").write_text("upstream conflicting edit\n", encoding="utf-8")
+        self.commit(self.seed, "upstream conflicting edit")
+        subprocess.run(["git", "push", "origin", "main"], cwd=self.seed, check=True,
+                       capture_output=True, text=True)
+        result = run_sync(candidate, "prepare", self.remote)
+        self.assertEqual(result.returncode, 2)
+        evidence = json.loads(result.stdout)
+        self.assertEqual(evidence["reason"], "upstream_merge_conflict")
+        self.assertIn("README.md", evidence["changed_paths"])
 
     def tearDown(self):
         self.temp.cleanup()
