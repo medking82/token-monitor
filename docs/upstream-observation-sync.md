@@ -30,16 +30,14 @@ missing or rewound refs, manifest drift, failed fetches, and conflicts fail clos
 leaves the isolated worktree for inspection and reports bounded changed paths.
 
 The helper does not read credentials, invoke upstream or package scripts, commit, push, install,
-select a model, or release. After preparation, run the Token Monitor checks required by its
-`AGENTS.md`, classify the frozen diff, and use the existing Native Review owner when the
-classifier returns `risk=high` or an explicit review request admits it. Native evidence never
-authorizes promotion. Publication, app promotion, installation, and live quota verification are
-separate SOP actions; failures remain durable and are not retried automatically.
+select a model, or release. After preparation, run the Token Monitor checks listed below and inspect the frozen diff.
+Native Review remains available when explicitly requested. Review evidence never authorizes
+promotion. Publication, app promotion, installation, and live quota verification require separate
+authorization; failures remain durable and are not retried automatically.
 
 For a prepared change, run the ordinary upstream checks (`npm run verify`, plus the focused quota
-snapshot tests), inspect the exact diff, and complete one Native Review round when risk admission
-requires it. Then use a normal non-force push to the maintenance branch and promote through the
-repository's manual policy. A no-change check exits without inference, package install, build, or
+snapshot tests), inspect the exact diff. When publication is authorized, use a normal non-force push to the
+maintenance branch; app promotion remains a separate explicit action. A no-change check exits without inference, package install, build, or
 release activity. A conflict or failed check stops, preserves the isolated evidence, leaves the
 currently installed app untouched, and reports the condition for operator action.
 
