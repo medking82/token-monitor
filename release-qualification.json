@@ -45,6 +45,10 @@
       ]
     }
   ],
+  "runnerSha256": {
+    "release_qualification.py": "ebb880a3a492cda2a09f3d773bf52775c141970d4b5b1caf83deb6f7652655ee",
+    "release_unittest.py": "ed905d19f7196d53895ff64e628310ed4f36986fa3a294b7581b3e52128be71a"
+  },
   "nativeLanes": [
     "Windows SignPath Authenticode signing/verification (release.yml)",
     "macOS widget build, codesign, notarization, verify:mac:widget-app",

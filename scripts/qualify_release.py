@@ -22,14 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / 'release-qualification.json'
 
 
-def check_runner(runner, pin):
-    """Require a committed runner revision containing the pinned commit; refuse dirty runner sources."""
-    git = ['git', '-C', str(runner)]
-    for name in ('release_qualification.py', 'release_unittest.py'):
-        if subprocess.run([*git, 'diff', '--quiet', 'HEAD', '--', name]).returncode:
-            sys.exit(f'Runner file {name} has uncommitted edits; use a committed revision')
-    if subprocess.run([*git, 'merge-base', '--is-ancestor', pin, 'HEAD']).returncode:
-        sys.exit(f'Runner checkout does not contain pinned revision {pin}')
+def check_runner(runner, pins):
+    """Require the pinned committed runner sources (LF-normalized digests), not a dirty sibling edit."""
+    import hashlib
+    for name, expected in pins.items():
+        data = (runner / name).read_bytes().replace(b'\r\n', b'\n')
+        if hashlib.sha256(data).hexdigest() != expected:
+            sys.exit(f'Runner file {name} differs from pinned revision; use a clean checkout of the pin')
 
 
 def main():
@@ -50,7 +49,7 @@ def main():
     has_unittest = any(s.get('runner') == 'unittest' for s in manifest['suites'])
     if args.class_shards > 1 and not has_unittest:
         sys.exit('Class sharding is N/A: this project has no Python unittest suite')
-    check_runner(args.runner, manifest['runnerPin'])
+    check_runner(args.runner, manifest['runnerSha256'])
     sys.path.insert(0, str(args.runner))
     from release_qualification import qualify
     timings = args.timings if args.class_shards > 1 and args.timings.exists() else None
