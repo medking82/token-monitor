@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "project": "token-monitor",
+  "runnerPin": "4f79a5b4452d9a91037e4cbf564a927b44e2bac6",
+  "scope": "targeted-offline",
+  "suites": [
+    {
+      "name": "install",
+      "timeout": 900,
+      "argv": [
+        "npm",
+        "ci",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--prefer-offline"
+      ]
+    },
+    {
+      "name": "worker-sync",
+      "timeout": 120,
+      "argv": [
+        "sh",
+        "-c",
+        "node scripts/sync-worker-shared.js && git diff --exit-code -- worker/src/shared"
+      ]
+    },
+    {
+      "name": "lint",
+      "timeout": 600,
+      "argv": [
+        "npx",
+        "--no-install",
+        "eslint",
+        "."
+      ]
+    },
+    {
+      "name": "node-tests",
+      "timeout": 1200,
+      "argv": [
+        "node",
+        "--test",
+        "tests/**/*.test.js"
+      ]
+    }
+  ],
+  "nativeLanes": [
+    "Windows SignPath Authenticode signing/verification (release.yml)",
+    "macOS widget build, codesign, notarization, verify:mac:widget-app",
+    "Live Grok integration test self-skips without credentials",
+    "TZ matrix job in ci.yml not reproduced here"
+  ]
+}
