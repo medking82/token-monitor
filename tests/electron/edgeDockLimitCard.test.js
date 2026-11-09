@@ -353,8 +353,9 @@ test('Notion rolling and monthly allowances render in both display modes and hid
   const provider = normalizeLimitProvider({
     provider: 'notion', status: 'ok', source: 'web',
     windows: [
-      { kind: 'session', label: 'Rolling', used: 21, limit: 50, usedPercent: 42, resetsAt: '2026-11-01T00:00:00Z' },
-      { kind: 'billing', label: 'Monthly', used: 18, limit: 100, usedPercent: 18, resetsAt: '2026-12-01T00:00:00Z' }
+      // Relative resets keep both rows in the future; fixed dates expire and blank the reset text.
+      { kind: 'session', label: 'Rolling', used: 21, limit: 50, usedPercent: 42, resetsAt: new Date(Date.now() + 5 * 3_600_000).toISOString() },
+      { kind: 'billing', label: 'Monthly', used: 18, limit: 100, usedPercent: 18, resetsAt: new Date(Date.now() + 20 * 86_400_000).toISOString() }
     ]
   });
   const before = JSON.stringify(provider);
